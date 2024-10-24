@@ -1,0 +1,155 @@
+---
+# Step 1: Define the MongoDB PersistentVolumeClaim (PVC) for EFS
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-efs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany # EFS supports multiple pods accessing the volume
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# create a storage class
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+volumeBindingMode: Immediate
+
+---
+# Define the PersistentVolume for EFS
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-efs-pv
+spec:
+  capacity:
+    storage: 5Gi # Adjust based on your needs
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany # EFS supports multi-pod access
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-sc
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: fs-05bb6fd14862d32b2 # Replace with your EFS File System ID
+
+---
+# Step 2: Define the MongoDB Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+spec:
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    app: mongo
+
+---
+# Step 3: Define the MongoDB Deployment using EFS
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - mountPath: /data/db
+              name: mongo-storage
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+      volumes:
+        - name: mongo-storage
+          persistentVolumeClaim:
+            claimName: mongo-efs-pvc # Use the EFS PVC defined above
+
+---
+# Step 4: Define the Flask Service (NodePort for internal access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask
+spec:
+  type: NodePort
+  ports:
+    - port: 5000
+      targetPort: 5000
+      nodePort: 30000
+  selector:
+    app: flask
+
+---
+# Step 5: Define the Flask LoadBalancer Service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: flask # Corrected selector to match the Flask Deployment
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+
+---
+# Step 6: Define the Flask Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask
+  template:
+    metadata:
+      labels:
+        app: flask
+    spec:
+      containers:
+        - name: flask
+          image: kolhar730/cloud-assignment-2-app:amd-v1
+          ports:
+            - containerPort: 5000
+          env:
+            - name: MONGO_URL
+              value: "mongodb://mongo:27017"
+            - name: MONGO_HOST
+              value: "mongo"
+            - name: MONGO_PORT
+              value: "27017"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
