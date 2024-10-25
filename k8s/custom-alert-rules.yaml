@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app: kube-prometheus-stack
+    app.kubernetes.io/instance: kube-prometheus-stack
+    release: kube-prometheus-stack
+  name: replica-count-alerts
+spec:
+  groups:
+    - name: Deployment Alerts
+      rules:
+        - alert: FlaskReplicasLow
+          expr: count(kube_pod_info{created_by_kind="ReplicaSet", namespace="default", created_by_name=~"flask.+"}) < 2
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Flask deployment replicas are below the desired count"
+            description: "The Flask deployment has less than 2 replicas. Current value: {{ $value }}"
+
+        - alert: MongoReplicasLow
+          expr: count(kube_pod_info{created_by_kind="ReplicaSet", namespace="default", created_by_name=~"mongo.+"}) < 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Mongo deployment replicas are below the desired count"
+            description: "The Mongo deployment has less than 1 replica. Current value: {{ $value }}"

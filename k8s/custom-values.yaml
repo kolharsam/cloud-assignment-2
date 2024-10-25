@@ -1,0 +1,35 @@
+prometheus:
+  service:
+    type: NodePort
+grafana:
+  service:
+    type: NodePort
+alertmanager:
+  service:
+    type: NodePort
+  config:
+    global:
+      slack_api_url: <REVOKED_URL>
+    route:
+      group_by: ["alertname"]
+      receiver: "slack-receiver"
+      routes:
+        - match:
+            alertname: FlaskReplicasLow
+          receiver: "slack-receiver"
+        - match:
+            alertname: MongoReplicasLow
+          receiver: "slack-receiver"
+    receivers:
+      - name: "slack-receiver"
+        slack_configs:
+          - channel: "#assignment-2-sak9791"
+            send_resolved: true
+            title: "Cluster Alert: {{ .CommonAnnotations.summary }}"
+            text: "{{ .CommonAnnotations.description }}"
+    inhibit_rules:
+      - source_match:
+          severity: "critical"
+        target_match:
+          severity: "warning"
+        equal: ["namespace", "alertname"]

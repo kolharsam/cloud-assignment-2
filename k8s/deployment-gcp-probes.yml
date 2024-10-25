@@ -1,0 +1,146 @@
+---
+# PersistentVolume for GCP Persistent Disk
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv
+spec:
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  gcePersistentDisk:
+    pdName: mongo-disk
+    fsType: ext4
+
+---
+# PersistentVolumeClaim for GCP Persistent Disk
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# MongoDB Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+spec:
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    app: mongo
+  type: ClusterIP
+
+---
+# MongoDB Deployment with adjusted resource requests
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - mountPath: /data/db
+              name: mongo-storage
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: mongo-storage
+          persistentVolumeClaim:
+            claimName: mongo-pvc
+
+---
+# Flask LoadBalancer Service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: flask
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+
+---
+# Flask Deployment with RollingUpdate
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: flask
+  template:
+    metadata:
+      labels:
+        app: flask
+    spec:
+      containers:
+        - name: flask
+          image: kolhar730/cloud-assignment-2-app:amd-v2
+          ports:
+            - containerPort: 5000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 3
+          env:
+            - name: MONGO_URL
+              value: "mongodb://mongo:27017"
+            - name: MONGO_HOST
+              value: "mongo"
+            - name: MONGO_PORT
+              value: "27017"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
