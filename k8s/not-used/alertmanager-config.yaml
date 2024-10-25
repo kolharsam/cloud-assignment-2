@@ -6,7 +6,7 @@ metadata:
 data:
   alertmanager.yml: |
     global:
-      slack_api_url: 'https://hooks.slack.com/services/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'
+      slack_api_url: <REVOKED_URL>
 
     route:
       receiver: slack-receiver
